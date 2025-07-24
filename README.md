@@ -1,26 +1,27 @@
-# 🚀 Infraestrutura AWS com Terraform — Instância EC2 Ubuntu 24.04
+# 🌐 Infraestrutura AWS com Terraform — VPC, Subnets, NAT e EC2
 
-Este projeto provisiona uma instância EC2 Ubuntu 24.04 na AWS utilizando Terraform, com foco em boas práticas, segurança e estrutura modular para escalar em futuros projetos de infraestrutura como código.
+Este projeto expande a infraestrutura na AWS utilizando Terraform, com foco na criação de uma VPC completa: subnets públicas e privadas, gateway NAT, Internet Gateway e instância EC2 em subnet privada. A configuração foi realizada com o módulo oficial `terraform-aws-modules/vpc/aws`.
 
 ---
 
 ## 📌 Visão Geral
 
-- 🧱 **Infraestrutura como Código (IaC)** com Terraform
-- ☁️ **AWS EC2 Ubuntu 24.04** provisionada dinamicamente
-- 🔐 Segurança com `.gitignore` e variáveis sensíveis externas
-- 🧩 Modular e personalizável via arquivos `.tfvars`
+- 🧱 Infraestrutura como Código com Terraform
+- 🌍 VPC customizada (CIDR, subnets, NAT, IGW)
+- 🔐 Instância EC2 em subnet privada com NAT Gateway
+- 📦 Uso de módulos oficiais da comunidade Terraform
 
+---
 ---
 
 ## 🗂️ Estrutura do Projeto
 
 ```bash
-infra-aws-terraform/
-├── main.tf               # Recurso EC2
+infra-aws-vpc/
+├── main.tf               # Declaração da VPC, EC2 e seus recursos principais
 ├── provider.tf           # Configuração da AWS
 ├── variables.tf          # Declaração das variáveis
-├── outputs.tf            # Saída de dados (ex: IP público)
+├── outputs.tf            # Saída de dados (ex: IPs, Subnets)
 ├── terraform.tfvars      # Valores reais das variáveis (NÃO subir ao GitHub)
 ├── .gitignore            # Ignora arquivos sensíveis e internos do Terraform
 └── README.md             # Documentação do projeto
@@ -51,24 +52,37 @@ provider "aws" {
 }
 ```
 
-### 3️⃣ Busca da AMI Ubuntu 24.04 (main.tf)
+### 3️⃣ Módulo VPC (main.tf)
 ```hcl
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "5.19.0"
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  name = "terraform-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs              = ["us-west-2a", "us-west-2b", "us-west-2c"]
+  private_subnets  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets   = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+  enable_dns_hostnames = true
+  enable_nat_gateway   = true
+  enable_vpn_gateway   = true
+
+  tags = {
+    Terraform   = "true"
+    Environment = "dev"
   }
 }
 ```
 
-### 4️⃣ Provisão da instância EC2
+### 4️⃣ Provisão da instância EC2 em subnet privada
 ```hcl
 resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
+  subnet_id = module.vpc.private_subnet[0]
+  vpc_security_group_ids = [module.vpc.default_security_group_id]
   tags = {
     Name = var.instance_name
   }
@@ -103,9 +117,18 @@ terraform apply     # Aplica e provisiona a infraestrutura
 
 Adicione no `outputs.tf` se quiser retornar IP da instância:
 ```hcl
-output "public_ip" {
-  value = aws_instance.app_server.public_ip
+output "vpc_id" {
+  value = module.vpc.vpc_id
 }
+
+output "private_subnet_ids" {
+  value = module.vpc.private_subnets
+}
+
+output "public_subnet_ids" {
+  value = module.vpc.public_subnets
+}
+
 ```
 
 ---
@@ -115,6 +138,8 @@ output "public_ip" {
 - Dados sensíveis (ex: `terraform.tfvars`, `*.tfstate`) estão protegidos via `.gitignore`
 - Não commitamos credenciais nem tokens
 - Pode-se utilizar `AWS Secrets Manager` ou `GitHub Secrets` para projetos mais avançados
+- Instancia EC2 em subnet privada(acesso via NAT Gateway)
+- Utilização de variáveis internas para evitar hardcoded
 
 ---
 
@@ -127,6 +152,12 @@ output "public_ip" {
 - Utilizar `remote backend` (S3 + DynamoDB) para ambientes colaborativos
 
 ---
+
+📚 Fontes oficiais utilizadas
+
+    📘 Tutorial oficial HashiCorp
+
+    📦 Módulo terraform-aws-vpc
 
 ## 🤝 Autor
 
